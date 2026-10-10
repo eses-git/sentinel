@@ -128,11 +128,36 @@ features (e.g. an edge worker to enrich audit results), expose them via
    wrangler pages deploy dist --project-name sentinel
    ```
 
-### Optional — Cloudflare Workers
+### Pages Function (Network Probe)
 
-The app can be fronted by a Cloudflare Worker for headers/edge logic. A minimal
-worker simply proxies the static site; see the Cloudflare Workers docs for the
-latest template.
+The **Network Probe** module is powered by a Pages Function at
+`functions/api/probe.ts`, exposed as `GET /api/probe`. It uses an `onRequest`
+handler (all HTTP methods) to reflect client IP/geo/ASN data, capture the
+client's identifying headers, and — when a target is supplied via `?target=`
+(GET) or a JSON body (POST) — server-side scan that site's security headers.
+
+Routing is pinned down by [`_routes.json`](https://developers.cloudflare.com/pages/functions/routing/#routes)
+in `public/` (copied to `dist/` at build time). This ensures `/api/*` is handled
+by Functions while the rest of the SPA is served statically:
+
+```json
+{
+  "version": 1,
+  "include": ["/api/*"],
+  "exclude": []
+}
+```
+
+> Without this (or an equivalent deployment config), Cloudflare may fall back to
+> serving the SPA's `index.html` for `/api/probe`, which is the "Unexpected
+> token '<'" symptom the client now guards against.
+
+The function's types come from [`@cloudflare/workers-types`](https://www.npmjs.com/package/@cloudflare/workers-types)
+(a dev dependency). Type-check it independently with:
+
+```bash
+npx tsc --noEmit --lib es2022 --types @cloudflare/workers-types functions/api/probe.ts
+```
 
 ---
 
@@ -151,7 +176,8 @@ security-check/
 ├── README.md
 ├── public/
 │   ├── favicon.svg
-│   └── icons.svg
+│   ├── icons.svg
+│   └── _routes.json           # Routes /api/* to Pages Functions
 ├── functions/
 │   └── api/
 │       └── probe.ts           # Pages Function: IP/geo/header probe

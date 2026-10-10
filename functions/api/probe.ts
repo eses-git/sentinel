@@ -1,57 +1,35 @@
+/// <reference types="@cloudflare/workers-types" />
+
 /**
- * Cloudflare Pages Function — `GET /api/probe`
+ * Cloudflare Pages Function — `/api/probe`
  *
- * A privacy-aware diagnostic endpoint that reflects everything a remote server
- * can learn about a visitor at the network layer. It never persists or
- * forwards data; the response is marked `Cache-Control: no-store`.
+ * A privacy-aware diagnostic endpoint that reflects the network identity a
+ * remote server can observe about a visitor. It never persists or forwards
+ * data, and every response carries `Cache-Control: no-store`.
  *
- * The single endpoint performs three jobs:
+ * Responsibilities:
  *
- *   1. **IP & Geo inspection** — reads the client IP (from the
- *      `CF-Connecting-IP` header) and country / city / region / ASN /
- *      organisation (from Cloudflare's `request.cf` object).
+ *   1. **IP & Geo inspection** — client IP (from `CF-Connecting-IP`), ASN,
+ *      organisation, country, city, region, continent, timezone and
+ *      coordinates (from Cloudflare's `request.cf`).
  *
- *   2. **Header audit** — summarises the client's identifying headers:
- *      `User-Agent`, `Accept-Language`, and every `Sec-Fetch-*` directive.
+ *   2. **Header audit** — `User-Agent`, `Accept-Language`, and the `Sec-Fetch-*`
+ *      directives sent by the client.
  *
- *   3. **Security header scan** — when a `?target=` URL is supplied, the
- *      function fetches that site and reports which of five critical security
- *      headers (`Content-Security-Policy`, `Strict-Transport-Security`,
- *      `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) are
- *      missing from its response.
+ *   3. **Security header scan** — when a `?target=` query parameter (GET) or a
+ *      `{ "target": "..." }` JSON body (POST) is supplied, the function fetches
+ *      that site and reports whether five critical security headers are
+ *      present or missing.
  *
- * ---------------------------------------------------------------------------
- * Type note: `@cloudflare/workers-types` is intentionally **not** a dependency
- * of this project (the `functions/` directory is excluded from the Vite build),
- * so the runtime shapes this file relies on are declared inline below.
+ * The `onRequest` handler responds to **all** HTTP methods (including CORS
+ * `OPTIONS` preflight), which is why it is used instead of `onRequestGet`.
  */
 
-/** Geo/IP fields Cloudflare exposes on `request.cf`. */
-interface RequestCfProperties {
-  country?: string
-  city?: string
-  region?: string
-  regionCode?: string
-  continent?: string
-  timezone?: string
-  latitude?: string
-  longitude?: string
-  postalCode?: string
-  asn?: number
-  asOrganization?: string
-  colo?: string
-}
-
-/** A standard `Request` augmented with Cloudflare's `cf` property. */
-interface CfRequest extends Request {
-  cf?: RequestCfProperties
-}
-
-/** Minimal Pages Function event context (only the pieces this handler uses). */
-interface PagesFunctionContext {
-  request: CfRequest
-  env: Record<string, unknown>
-}
+/**
+ * Environment bindings type. Empty for now — add KV namespaces, D1 databases
+ * or other bindings here as they are configured.
+ */
+type Env = Record<string, unknown>
 
 /** Geo-location summary returned to the client. */
 interface GeoInfo {
@@ -97,23 +75,30 @@ const SECURITY_HEADERS = [
   'Referrer-Policy',
 ] as const
 
+/** Shared CORS headers applied to every response. */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+} as const
+
 /**
  * Collects the client's identifying headers into a plain object.
  *
- * @param request The incoming request.
+ * @param headers The incoming request headers.
  * @returns The `User-Agent`, `Accept-Language` and `Sec-Fetch-*` directives.
  */
-function collectClientHeaders(request: Request) {
+function collectClientHeaders(headers: Headers) {
   // Sec-Fetch headers share the `sec-fetch-` prefix; gather the common set.
   const secFetch: Record<string, string> = {}
   for (const name of ['dest', 'mode', 'site', 'user']) {
-    const value = request.headers.get(`sec-fetch-${name}`)
+    const value = headers.get(`sec-fetch-${name}`)
     if (value) secFetch[name] = value
   }
 
   return {
-    userAgent: request.headers.get('user-agent'),
-    acceptLanguage: request.headers.get('accept-language'),
+    userAgent: headers.get('user-agent'),
+    acceptLanguage: headers.get('accept-language'),
     secFetch,
   }
 }
@@ -151,55 +136,70 @@ async function scanTargetSecurityHeaders(
  *
  * @param data   The payload to serialise.
  * @param status The HTTP status code (defaults to 200).
- * @returns A JSON `Response`.
+ * @returns A JSON `Response` with `Content-Type: application/json`.
  */
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
+      ...CORS_HEADERS,
       'Cache-Control': 'no-store',
     },
   })
 }
 
 /**
- * Pages Function handler for `GET /api/probe`.
+ * Pages Function handler for `/api/probe` (all HTTP methods).
  *
  * Builds the client identity + geo + header summary, then optionally scans a
- * `?target=` URL's security headers.
+ * target site's security headers. The target may arrive via `?target=` (GET)
+ * or a `{ "target": "..." }` JSON body (POST).
  *
  * @param context The Pages Function event context.
  * @returns A JSON `Response`.
  */
-export async function onRequestGet(
-  context: PagesFunctionContext,
-): Promise<Response> {
+export const onRequest: PagesFunction<Env> = async (context) => {
   const { request } = context
 
-  // `request.cf` may be absent outside the Cloudflare edge (e.g. local tests).
-  const cf = request.cf ?? {}
+  // Answer CORS preflight (OPTIONS) requests immediately.
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...CORS_HEADERS } })
+  }
 
-  // Extract the optional target URL from the query string.
-  const target = new URL(request.url).searchParams.get('target')
+  // `request.cf` is populated at the Cloudflare edge and may be absent when the
+  // function is run outside of Cloudflare (e.g. unit tests).
+  const cf = request.cf
+
+  // Resolve the target URL from the query string (GET) or the JSON body (POST).
+  let target = new URL(request.url).searchParams.get('target')
+  if (!target && request.method === 'POST') {
+    try {
+      const body = (await request.json()) as { target?: string }
+      target = body.target ?? null
+    } catch {
+      target = null // Non-JSON or empty body — fall through.
+    }
+  }
 
   const result: ProbeResponse = {
-    // Cloudflare injects the real client IP into this header at the edge.
-    ip: request.headers.get('cf-connecting-ip'),
+    // Cloudflare injects the real client IP into `CF-Connecting-IP`.
+    ip:
+      request.headers.get('cf-connecting-ip') ??
+      request.headers.get('x-forwarded-for'),
     geo: {
-      country: cf.country ?? null,
-      city: cf.city ?? null,
-      region: cf.region ?? null,
-      continent: cf.continent ?? null,
-      timezone: cf.timezone ?? null,
-      latitude: cf.latitude ?? null,
-      longitude: cf.longitude ?? null,
+      country: cf?.country ?? null,
+      city: cf?.city ?? null,
+      region: cf?.region ?? null,
+      continent: cf?.continent ?? null,
+      timezone: cf?.timezone ?? null,
+      latitude: cf?.latitude ?? null,
+      longitude: cf?.longitude ?? null,
     },
-    asn: cf.asn ?? null,
-    organization: cf.asOrganization ?? null,
-    colo: cf.colo ?? null,
-    clientHeaders: collectClientHeaders(request),
+    asn: cf?.asn ?? null,
+    organization: cf?.asOrganization ?? null,
+    colo: cf?.colo ?? null,
+    clientHeaders: collectClientHeaders(request.headers),
     securityHeaders: null,
     scannedTarget: null,
     targetError: null,

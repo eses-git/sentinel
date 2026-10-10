@@ -122,6 +122,21 @@ export function useNetworkProbe(): NetworkProbeState {
           throw new Error(detail)
         }
 
+        // Guard against non-JSON responses. If the Pages Function is not
+        // deployed/routed, Cloudflare serves the SPA's index.html with a 200 OK
+        // and a `text/html` content type — calling `res.json()` on that HTML
+        // throws "Unexpected token '<'". Inspect the Content-Type first so we
+        // can surface a descriptive error instead of a cryptic parse failure.
+        const contentType = response.headers.get('content-type') ?? ''
+        if (!contentType.includes('application/json')) {
+          throw new Error(
+            'Probe endpoint returned non-JSON content (the Cloudflare Pages ' +
+              'Function may not be deployed or routed — the SPA fallback served ' +
+              'HTML instead). Expected `Content-Type: application/json` but ' +
+              `received: ${contentType || 'none'}.`,
+          )
+        }
+
         const data = (await response.json()) as ProbeResult
 
         // Discard stale results (a newer run supersedes this one).
