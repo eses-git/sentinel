@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SENTINEL // Network &amp; Privacy Audit</title>
+    <script>
+      // Pre-apply the persisted theme (or the OS preference) BEFORE React
+      // hydrates. This prevents a "flash" of the wrong colour scheme on load.
+      (function () {
+        try {
+          var stored = localStorage.getItem('sentinel-theme');
+          var dark = stored
+            ? stored === 'dark'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', dark);
+        } catch (e) {
+          /* localStorage may be unavailable — leave the default (light) theme. */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

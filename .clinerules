@@ -1,0 +1,13 @@
+# Design System & UI Rules
+- **Corners:** Absolutely NO rounded corners allowed under any circumstances (`rounded-none` everywhere). Never use `rounded`, `rounded-md`, `rounded-lg`, `rounded-full`, etc. All buttons, cards, modals, inputs, and borders must be strictly square (`0px` border radius).
+- **Styling:** Use Tailwind CSS exclusively. Assume Tailwind CSS is already installed and configured in the project.
+- **Theme:** Implement a clean, modern, professional Dark & Light mode toggle using CSS variables or Tailwind's `dark:` variant (class-based dark mode).
+- **Code Quality:** Write clean, modular React components with strict TypeScript types. Never use `any`.
+
+# Code Documentation & Commenting Rules
+- **Component & Hook Headers:** Provide JSDoc annotations at the top of every hook, utility, and component describing its purpose, props/return types, and security context.
+- **Inline Logic Comments:** Add clear inline comments explaining non-trivial operations (e.g., SDP candidate parsing regex, Canvas bitwise hashing, AudioWorklet pipelines, or WebRTC event loops).
+- **Type Annotations:** Document complex interfaces with field-level descriptions.
+
+# Project Documentation
+- Maintain a comprehensive, professionally formatted `README.md` in the project root containing architectural diagrams, setup guides, Cloudflare deployment instructions, and security test breakdowns.

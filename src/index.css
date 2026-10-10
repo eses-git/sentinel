@@ -1,0 +1,76 @@
+/* ============================================================================
+ * SENTINEL // Network & Privacy Audit
+ * Global stylesheet — Tailwind CSS v4 entry point.
+ *
+ * This file imports the Tailwind engine, configures CLASS-BASED dark mode
+ * (via the `dark` class on <html>) and defines a small set of base styles so
+ * the UI renders with a sharp, technical, "cyber-security" aesthetic:
+ *   - Strictly square corners (0px border radius) enforced globally.
+ *   - Subtle grid lines behind the content.
+ *   - Monospace-leaning typography tokens.
+ * ========================================================================== */
+
+/* Import the Tailwind CSS v4 engine. */
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 defaults to `prefers-color-scheme` (media-query) dark mode.
+ * We override it to CLASS-BASED dark mode: any element matching `.dark` or a
+ * descendant of `.dark` is considered "dark". Toggling the `dark` class on
+ * <html> therefore flips the whole UI.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Tailwind v4 exposes theme variables as CSS custom properties;
+ * utilities like `font-sans` / `font-mono` read from here.
+ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
+}
+
+/*
+ * Base layer: global resets + aesthetic details. Written with `@layer` so
+ * component/utility classes can still override these where appropriate.
+ */
+@layer base {
+  /*
+   * STRICT 0px BORDER RADIUS — the single most important visual rule of this
+   * project. Even if a rounded utility slips into the markup, this reset
+   * guarantees every element stays perfectly square.
+   */
+  *,
+  *::before,
+  *::after {
+    border-radius: 0 !important;
+  }
+
+  html {
+    /* Crisp text rendering for the technical UI. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    /* Subtle grid lines to evoke a network/terminal aesthetic. */
+    background-color: #f8fafc; /* slate-50 */
+    background-image:
+      linear-gradient(to right, rgb(100 116 139 / 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(100 116 139 / 0.07) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Dark-mode variant of the body grid (uses the `dark` class on <html>). */
+  .dark body {
+    background-color: #020617; /* slate-950 */
+    background-image:
+      linear-gradient(to right, rgb(148 163 184 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(148 163 184 / 0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
